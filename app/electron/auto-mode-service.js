@@ -1,6 +1,7 @@
-const { query, AbortError } = require("@anthropic-ai/claude-agent-sdk");
+const { query, AbortError, createSdkMcpServer, tool } = require("@anthropic-ai/claude-agent-sdk");
 const path = require("path");
 const fs = require("fs/promises");
+const { z } = require("zod");
 
 /**
  * Auto Mode Service - Autonomous feature implementation
@@ -12,6 +13,54 @@ class AutoModeService {
     this.runningFeatures = new Map(); // featureId -> { abortController, query, projectPath, sendToRenderer }
     this.autoLoopRunning = false; // Separate flag for the auto loop
     this.autoLoopAbortController = null;
+  }
+
+  /**
+   * Create a custom MCP server with the UpdateFeatureStatus tool
+   * This tool allows Claude Code to safely update feature status without
+   * directly modifying the feature_list.json file, preventing race conditions
+   * and accidental state restoration.
+   */
+  createFeatureToolsServer(projectPath) {
+    const service = this; // Reference to AutoModeService instance
+
+    return createSdkMcpServer({
+      name: "automaker-tools",
+      version: "1.0.0",
+      tools: [
+        tool(
+          "UpdateFeatureStatus",
+          "Update the status of a feature in the feature list. Use this tool instead of directly modifying feature_list.json to safely update feature status.",
+          {
+            featureId: z.string().describe("The ID of the feature to update"),
+            status: z.enum(["backlog", "in_progress", "verified"]).describe("The new status for the feature")
+          },
+          async (args) => {
+            try {
+              console.log(`[AutoMode] UpdateFeatureStatus tool called: featureId=${args.featureId}, status=${args.status}`);
+
+              // Use the service's updateFeatureStatus method
+              await service.updateFeatureStatus(args.featureId, args.status, projectPath);
+
+              return {
+                content: [{
+                  type: "text",
+                  text: `Successfully updated feature ${args.featureId} to status "${args.status}"`
+                }]
+              };
+            } catch (error) {
+              console.error("[AutoMode] UpdateFeatureStatus tool error:", error);
+              return {
+                content: [{
+                  type: "text",
+                  text: `Failed to update feature status: ${error.message}`
+                }]
+              };
+            }
+          }
+        )
+      ]
+    });
   }
 
   /**
@@ -359,12 +408,18 @@ class AutoModeService {
       const abortController = new AbortController();
       execution.abortController = abortController;
 
+      // Create custom MCP server with UpdateFeatureStatus tool
+      const featureToolsServer = this.createFeatureToolsServer(projectPath);
+
       const options = {
         model: "claude-opus-4-5-20251101",
         systemPrompt: this.getVerificationPrompt(),
         maxTurns: 1000,
         cwd: projectPath,
-        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+        mcpServers: {
+          "automaker-tools": featureToolsServer
+        },
+        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__automaker-tools__UpdateFeatureStatus"],
         permissionMode: "acceptEdits",
         sandbox: {
           enabled: true,
@@ -465,6 +520,7 @@ class AutoModeService {
 
 **Current Feature:**
 
+ID: ${feature.id}
 Category: ${feature.category}
 Description: ${feature.description}
 
@@ -484,8 +540,15 @@ Continue where you left off and complete the feature implementation:
 3. Write Playwright tests to verify the feature works correctly (if not already done)
 4. Run the tests and ensure they pass
 5. **DELETE the test file(s) you created** - tests are only for immediate verification
-6. Update .automaker/feature_list.json to mark this feature as "status": "verified"
+6. **CRITICAL: Use the UpdateFeatureStatus tool to mark this feature as verified** - DO NOT manually edit .automaker/feature_list.json
 7. Commit your changes with git
+
+**IMPORTANT - Updating Feature Status:**
+
+When all tests pass, you MUST use the \`mcp__automaker-tools__UpdateFeatureStatus\` tool to update the feature status:
+- Call the tool with: featureId="${feature.id}" and status="verified"
+- **DO NOT manually edit the .automaker/feature_list.json file** - this can cause race conditions
+- The UpdateFeatureStatus tool safely updates the feature status without risk of corrupting other data
 
 **Important Guidelines:**
 
@@ -495,6 +558,7 @@ Continue where you left off and complete the feature implementation:
 - Write comprehensive Playwright tests if not already done
 - Ensure all tests pass before marking as verified
 - **CRITICAL: Delete test files after verification**
+- **CRITICAL: Use UpdateFeatureStatus tool instead of editing feature_list.json directly**
 - Make a git commit when complete
 
 Begin by assessing what's been done and what remains to be completed.`;
@@ -704,12 +768,18 @@ Begin by assessing what's been done and what remains to be completed.`;
       const abortController = new AbortController();
       execution.abortController = abortController;
 
+      // Create custom MCP server with UpdateFeatureStatus tool
+      const featureToolsServer = this.createFeatureToolsServer(projectPath);
+
       // Configure options for the SDK query
       const options = {
         model: "claude-opus-4-5-20251101",
         systemPrompt: this.getCodingPrompt(),
         maxTurns: 1000,
         cwd: projectPath,
+        mcpServers: {
+          "automaker-tools": featureToolsServer
+        },
         allowedTools: [
           "Read",
           "Write",
@@ -719,6 +789,7 @@ Begin by assessing what's been done and what remains to be completed.`;
           "Bash",
           "WebSearch",
           "WebFetch",
+          "mcp__automaker-tools__UpdateFeatureStatus",
         ],
         permissionMode: "acceptEdits",
         sandbox: {
@@ -946,12 +1017,18 @@ Begin by assessing what's been done and what remains to be completed.`;
       const abortController = new AbortController();
       execution.abortController = abortController;
 
+      // Create custom MCP server with UpdateFeatureStatus tool
+      const featureToolsServer = this.createFeatureToolsServer(projectPath);
+
       const options = {
         model: "claude-opus-4-5-20251101",
         systemPrompt: this.getVerificationPrompt(),
         maxTurns: 1000,
         cwd: projectPath,
-        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+        mcpServers: {
+          "automaker-tools": featureToolsServer
+        },
+        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "mcp__automaker-tools__UpdateFeatureStatus"],
         permissionMode: "acceptEdits",
         sandbox: {
           enabled: true,
@@ -1061,6 +1138,7 @@ Begin by assessing what's been done and what remains to be completed.`;
 
 **Current Feature to Implement:**
 
+ID: ${feature.id}
 Category: ${feature.category}
 Description: ${feature.description}
 
@@ -1074,8 +1152,15 @@ ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 3. Write Playwright tests to verify the feature works correctly
 4. Run the tests and ensure they pass
 5. **DELETE the test file(s) you created** - tests are only for immediate verification
-6. Update .automaker/feature_list.json to mark this feature as "status": "verified"
+6. **CRITICAL: Use the UpdateFeatureStatus tool to mark this feature as verified** - DO NOT manually edit .automaker/feature_list.json
 7. Commit your changes with git
+
+**IMPORTANT - Updating Feature Status:**
+
+When you have completed the feature and all tests pass, you MUST use the \`mcp__automaker-tools__UpdateFeatureStatus\` tool to update the feature status:
+- Call the tool with: featureId="${feature.id}" and status="verified"
+- **DO NOT manually edit the .automaker/feature_list.json file** - this can cause race conditions
+- The UpdateFeatureStatus tool safely updates the feature status without risk of corrupting other data
 
 **Important Guidelines:**
 
@@ -1086,6 +1171,7 @@ ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 - Ensure all existing tests still pass
 - Mark the feature as passing only when all tests are green
 - **CRITICAL: Delete test files after verification** - tests accumulate and become brittle
+- **CRITICAL: Use UpdateFeatureStatus tool instead of editing feature_list.json directly**
 - Make a git commit when complete
 
 **Testing Utilities (CRITICAL):**
@@ -1142,12 +1228,18 @@ ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
    - Update test utilities in tests/utils.ts if needed
    - Re-run the tests to verify the fixes
    - **REPEAT this process until ALL tests pass**
-   - Keep the feature "status" as "in_progress" in .automaker/feature_list.json
 7. **If ALL tests pass:**
    - **DELETE the test file(s) for this feature** - tests are only for immediate verification
-   - Update .automaker/feature_list.json to set this feature's "status" to "verified"
+   - **CRITICAL: Use the UpdateFeatureStatus tool to mark this feature as verified** - DO NOT manually edit .automaker/feature_list.json
    - Explain what was implemented/fixed and that all tests passed
    - Commit your changes with git
+
+**IMPORTANT - Updating Feature Status:**
+
+When all tests pass, you MUST use the \`mcp__automaker-tools__UpdateFeatureStatus\` tool to update the feature status:
+- Call the tool with: featureId="${feature.id}" and status="verified"
+- **DO NOT manually edit the .automaker/feature_list.json file** - this can cause race conditions
+- The UpdateFeatureStatus tool safely updates the feature status without risk of corrupting other data
 
 **Testing Utilities:**
 - Check if tests/utils.ts exists and is being used
@@ -1165,6 +1257,7 @@ rm tests/[feature-name].spec.ts
 - **CONTINUE IMPLEMENTING until all tests pass** - don't stop at the first failure
 - Only mark as "verified" if Playwright tests pass
 - **CRITICAL: Delete test files after they pass** - tests should not accumulate
+- **CRITICAL: Use UpdateFeatureStatus tool instead of editing feature_list.json directly**
 - Update test utilities if functionality changed
 - Make a git commit when the feature is complete
 - Be thorough and persistent in fixing issues
@@ -1186,9 +1279,15 @@ Your role is to:
 - If other tests fail, verify if those tests are still accurate or should be updated or deleted
 - Continue rerunning tests and fixing issues until ALL tests pass
 - **DELETE test files after successful verification** - tests are only for immediate feature verification
-- Update feature status to verified in .automaker/feature_list.json after all tests pass
+- **Use the UpdateFeatureStatus tool to mark features as verified** - NEVER manually edit feature_list.json
 - **Update test utilities (tests/utils.ts) if functionality changed** - keep helpers in sync with code
 - Commit working code to git
+
+**IMPORTANT - UpdateFeatureStatus Tool:**
+You have access to the \`mcp__automaker-tools__UpdateFeatureStatus\` tool. When all tests pass, use this tool to update the feature status:
+- Call with featureId and status="verified"
+- **DO NOT manually edit .automaker/feature_list.json** - this can cause race conditions and restore old state
+- The tool safely updates the status without corrupting other feature data
 
 **Testing Utilities:**
 - Check if tests/utils.ts needs updates based on code changes
@@ -1199,7 +1298,7 @@ Your role is to:
 **Test Deletion Policy:**
 Tests should NOT accumulate. After a feature is verified:
 1. Delete the test file for that feature
-2. Mark the feature as "verified" in feature_list.json
+2. Use UpdateFeatureStatus tool to mark the feature as "verified"
 
 This prevents test brittleness as the app changes rapidly.
 
@@ -1210,8 +1309,9 @@ You have access to:
 - Delete files (rm command)
 - Analyze test output
 - Make git commits
+- **UpdateFeatureStatus tool** (mcp__automaker-tools__UpdateFeatureStatus) - Use this to update feature status
 
-**CRITICAL:** Be persistent and thorough - keep iterating on the implementation until all tests pass. Don't give up after the first failure. Always delete tests after they pass and commit your work.`;
+**CRITICAL:** Be persistent and thorough - keep iterating on the implementation until all tests pass. Don't give up after the first failure. Always delete tests after they pass, use the UpdateFeatureStatus tool, and commit your work.`;
   }
 
   /**
@@ -1226,8 +1326,15 @@ Your role is to:
 - Create comprehensive Playwright tests using testing utilities
 - Ensure all tests pass before marking features complete
 - **DELETE test files after successful verification** - tests are only for immediate feature verification
+- **Use the UpdateFeatureStatus tool to mark features as verified** - NEVER manually edit feature_list.json
 - Commit working code to git
 - Be thorough and detail-oriented
+
+**IMPORTANT - UpdateFeatureStatus Tool:**
+You have access to the \`mcp__automaker-tools__UpdateFeatureStatus\` tool. When all tests pass, use this tool to update the feature status:
+- Call with featureId and status="verified"
+- **DO NOT manually edit .automaker/feature_list.json** - this can cause race conditions and restore old state
+- The tool safely updates the status without corrupting other feature data
 
 **Testing Utilities (CRITICAL):**
 - **Create and maintain tests/utils.ts** with helper functions for finding elements and common operations
@@ -1241,7 +1348,7 @@ This makes future tests easier to write and more maintainable!
 Tests should NOT accumulate. After a feature is verified:
 1. Run the tests to ensure they pass
 2. Delete the test file for that feature
-3. Mark the feature as "verified" in .automaker/feature_list.json
+3. Use UpdateFeatureStatus tool to mark the feature as "verified"
 
 This prevents test brittleness as the app changes rapidly.
 
@@ -1252,8 +1359,9 @@ You have full access to:
 - Delete files (rm command)
 - Make git commits
 - Search and analyze the codebase
+- **UpdateFeatureStatus tool** (mcp__automaker-tools__UpdateFeatureStatus) - Use this to update feature status
 
-Focus on one feature at a time and complete it fully before finishing. Always delete tests after they pass.`;
+Focus on one feature at a time and complete it fully before finishing. Always delete tests after they pass and use the UpdateFeatureStatus tool.`;
   }
 
   /**

@@ -25,7 +25,7 @@
     "category": "Kanban",
     "description": "When adding a new feature inside the modal there's an add feature button. Can you add a shortcut of shift? Enter which if you click shift enter I'll automatically add it in",
     "steps": [],
-    "status": "in_progress"
+    "status": "verified"
   },
   {
     "id": "feature-1765287141131-dz489etgj",
@@ -39,7 +39,7 @@
     "category": "Core",
     "description": "I'm noticing that when cards finish running, sometimes Cloud Code will update the featureless JSON and restore old state. I think instead of actually modifying the featureless JSON manually, it should call an custom tool, and that tool should update a card directly into the JSON so that Cloud Code isn't potentially messing with other things. All it needs to do is just pass in an ID and a status, and that's going to update in the JSON list.",
     "steps": [],
-    "status": "in_progress"
+    "status": "verified"
   },
   {
     "id": "feature-1765287638726-rtxxdpobi",
