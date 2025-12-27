@@ -31,6 +31,7 @@ export function SortableProjectItem({
         isHighlighted && 'bg-brand-500/10 text-foreground ring-1 ring-brand-500/20'
       )}
       data-testid={`project-option-${project.id}`}
+      onClick={() => onSelect(project)}
     >
       {/* Drag Handle */}
       <button
@@ -43,8 +44,8 @@ export function SortableProjectItem({
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
       </button>
 
-      {/* Project content - clickable area */}
-      <div className="flex items-center gap-2.5 flex-1 min-w-0" onClick={() => onSelect(project)}>
+      {/* Project content */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
         <Folder
           className={cn(
             'h-4 w-4 shrink-0',

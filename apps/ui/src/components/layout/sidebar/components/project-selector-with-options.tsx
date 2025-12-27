@@ -64,6 +64,7 @@ export function ProjectSelectorWithOptions({
     setProjectSearchQuery,
     selectedProjectIndex,
     projectSearchInputRef,
+    scrollContainerRef,
     filteredProjects,
   } = useProjectPicker({
     projects,
@@ -171,7 +172,10 @@ export function ProjectSelectorWithOptions({
                 items={filteredProjects.map((p) => p.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-0.5 max-h-64 overflow-y-auto overflow-x-hidden">
+                <div
+                  ref={scrollContainerRef}
+                  className="space-y-0.5 max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth scrollbar-styled"
+                >
                   {filteredProjects.map((project, index) => (
                     <SortableProjectItem
                       key={project.id}
